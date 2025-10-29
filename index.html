@@ -1,41 +1,74 @@
 <!doctype html>
+<!--
+  Assistance IA RCH — QR → Prompt (Version simplifiée & commentée)
+  -----------------------------------------------------------------
+  Objectif : lire un QR contenant un schéma JSON décrivant un formulaire,
+             générer dynamiquement les champs, puis produire un prompt IA.
+  Design intent : 100 % client (GitHub Pages), zéro serveur, maintenance
+                  minimale (les nouveaux QR embarquent leur propre schéma).
+-->
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Assistance IA RCH — QR → Prompt</title>
+
+  <!-- Tailwind (CDN) pour le style rapide. Aucune build locale. -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lib de scan QR.
+       IMPORTANT : on fixe le chemin du worker quand on charge depuis CDN. -->
   <script type="module">
     import QrScanner from "https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js";
     QrScanner.WORKER_PATH = "https://unpkg.com/qr-scanner@1.4.2/qr-scanner-worker.min.js";
+    // Expose à la page pour le second <script type=module> plus bas.
     window.__QrScanner = QrScanner;
   </script>
-  <style>.status{font-size:.85rem}</style>
+
+  <style>
+    /* Petites classes utilitaires */
+    .status { font-size: .85rem; }
+  </style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800">
+  <!-- En-tête simple -->
   <header class="p-4 bg-indigo-700 text-white">
     <h1 class="text-xl font-bold">Assistance IA RCH — QR → Prompt</h1>
     <p class="text-indigo-100 text-sm">Version simplifiée (une seule page, zéro maintenance via QR JSON).</p>
   </header>
 
+  <!-- Grille 2 colonnes : 1) lecture QR / 2) formulaire + prompt -->
   <main class="max-w-4xl mx-auto p-4 grid md:grid-cols-2 gap-4">
+
+    <!-- Colonne A : Scan / Import / GPS -->
     <section class="bg-white rounded-xl p-4 shadow space-y-3">
       <h2 class="font-semibold">1) Lecture du QR</h2>
+
+      <!-- Vue caméra : conteneur carré + overlay carré pour guider l'utilisateur -->
       <div class="aspect-square bg-slate-100 rounded-lg overflow-hidden relative">
         <video id="video" class="w-full h-full object-cover" playsinline muted></video>
         <div class="absolute inset-0 pointer-events-none grid place-items-center">
           <div class="w-1/2 aspect-square border-2 border-white/80 rounded-lg"></div>
         </div>
       </div>
+
+      <!-- Commandes capture / import / coller -->
       <div class="flex flex-wrap gap-2">
         <button id="btnStart" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Activer caméra</button>
         <button id="btnStop"  class="px-3 py-2 rounded-lg bg-slate-200">Arrêter</button>
+
+        <!-- Import d'une image contenant un QR (fallback utile en salle) -->
         <label class="px-3 py-2 rounded-lg bg-slate-200 cursor-pointer">Importer image
           <input id="fileInput" type="file" accept="image/*" class="hidden" />
         </label>
+
+        <!-- Coller du texte (contenu QR lisible) pour debug ou tests -->
         <button id="btnPaste" class="px-3 py-2 rounded-lg bg-slate-200">Coller texte QR</button>
       </div>
+
       <p id="status" class="status text-slate-600">Prêt.</p>
+
+      <!-- Acquisition GPS en un clic (remplit un champ texte) -->
       <div class="border-t pt-3">
         <button id="btnGPS" class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Acquérir position GPS</button>
         <input id="gpsField" type="text" placeholder="lat, lon ±précision (rempli par le bouton)"
@@ -44,19 +77,30 @@
       </div>
     </section>
 
+    <!-- Colonne B : Form dynamique + Prompt -->
     <section class="bg-white rounded-xl p-4 shadow space-y-3">
       <h2 class="font-semibold">2) Formulaire & Prompt</h2>
+
+      <!-- Les champs définis par le schéma JSON du QR seront injectés ici -->
       <div id="formContainer" class="space-y-2"></div>
+
+      <!-- Zone pour notes libres ajoutées au prompt -->
       <textarea id="extra" rows="4" class="w-full p-2 rounded-lg border border-slate-200 bg-slate-50"
         placeholder="Informations complémentaires (optionnel)"></textarea>
+
+      <!-- Affichage / copie du prompt final -->
       <label class="text-sm font-medium text-slate-600">Prompt généré</label>
       <textarea id="output" rows="10" class="w-full p-2 rounded-lg border border-slate-200 bg-slate-50 font-mono"
         placeholder="Le prompt apparaîtra ici…" readonly></textarea>
+
+      <!-- Actions : générer, copier, ouvrir ChatGPT (avec ?q=) -->
       <div class="flex flex-wrap gap-2">
         <button id="btnGenerate" class="px-3 py-2 rounded-lg bg-indigo-600 text-white" disabled>Générer</button>
         <button id="btnCopy" class="px-3 py-2 rounded-lg bg-slate-800 text-white" disabled>Copier</button>
-        <button id="btnOpenChatGPT" class="px-3 py-2 rounded-lg bg-slate-200" disabled>Ouvrir ChatGPT (copie auto)</button>
+        <button id="btnOpen" class="px-3 py-2 rounded-lg bg-slate-200" disabled>Ouvrir ChatGPT (copie auto)</button>
       </div>
+
+      <!-- Exemples de schémas pour générer des QR rapidement -->
       <details class="mt-2">
         <summary class="cursor-pointer text-slate-700">Schéma QR attendu (exemples)</summary>
         <pre id="exProduct" class="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto text-xs"></pre>
@@ -65,8 +109,13 @@
     </section>
   </main>
 
+  <!-- Logique applicative -->
   <script type="module">
     const QrScanner = window.__QrScanner;
+
+    /* ---------------------------------------------------------
+       🔗 Raccourcis vers les éléments du DOM
+    --------------------------------------------------------- */
     const els = {
       video: document.getElementById('video'),
       status: document.getElementById('status'),
@@ -81,14 +130,17 @@
       output: document.getElementById('output'),
       btnGenerate: document.getElementById('btnGenerate'),
       btnCopy: document.getElementById('btnCopy'),
-      btnOpenChatGPT: document.getElementById('btnOpenChatGPT'),
+      btnOpen: document.getElementById('btnOpen'),
       exProduct: document.getElementById('exProduct'),
       exZone: document.getElementById('exZone'),
     };
 
+    /* ---------------------------------------------------------
+       📄 Schémas d'exemple (fallbacks si QR minimal)
+       NB : plus de mention "Kemler" -> "Code danger ADR"
+    --------------------------------------------------------- */
     const EX_PRODUCT = {
       type: 'product_analysis',
-      version: 1,
       title: 'Analyse de produit',
       fields: [
         { id: 'un',   label: 'CODE ONU',        type: 'text' },
@@ -105,12 +157,11 @@ N° CAS: {{cas}}`
     };
     const EX_ZONE = {
       type: 'zone_analysis',
-      version: 1,
       title: "Analyse de zone d'intervention",
       fields: [
-        { id: 'gps',       label: 'Position GPS',          type: 'gps' },
-        { id: 'wind_dir',  label: 'Direction du vent',     type: 'text' },
-        { id: 'wind_speed',label: 'Vitesse vent (m/s)',    type: 'number' }
+        { id: 'gps',       label: 'Position GPS',       type: 'gps' },
+        { id: 'wind_dir',  label: 'Direction du vent',  type: 'text' },
+        { id: 'wind_speed',label: 'Vitesse vent (m/s)', type: 'number' }
       ],
       promptTemplate:
 `Analyse de zone : définir Z1/Z2/Z3 + consignes confinement/évacuation (AEGL) et moyens initiaux RCH3/RCH4.
@@ -120,8 +171,11 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
     els.exProduct.textContent = JSON.stringify(EX_PRODUCT, null, 2);
     els.exZone.textContent    = JSON.stringify(EX_ZONE,    null, 2);
 
-    let scanner = null;
-    let schema  = null;
+    /* ---------------------------------------------------------
+       🧠 État applicatif minimal
+    --------------------------------------------------------- */
+    let scanner = null;   // instance QrScanner
+    let schema  = null;   // schéma JSON courant (depuis QR)
 
     function setStatus(msg, tone='info'){
       const col = {info:'text-slate-600',ok:'text-emerald-600',warn:'text-amber-600',err:'text-red-600'}[tone]||'text-slate-600';
@@ -129,25 +183,35 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
       els.status.textContent = msg;
     }
 
+    /* ---------------------------------------------------------
+       🎥 Caméra : démarrage / arrêt + détection continue
+    --------------------------------------------------------- */
     async function startCamera(){
       try{
         if (scanner) { await scanner.stop(); scanner.destroy(); scanner=null; }
-        scanner = new QrScanner(els.video, result => { stopCamera(); handleQR(result?.data || result); },
-          { highlightScanRegion:true, highlightCodeOutline:true, maxScansPerSecond: 8 });
+        // Callback onDecode : on arrête la caméra dès la 1ère lecture
+        scanner = new QrScanner(els.video, result => {
+          stopCamera();
+          handleQR(result?.data || result);
+        }, { highlightScanRegion:true, highlightCodeOutline:true });
+
+        // Sélection de la caméra arrière si identifiable
         const cams = await QrScanner.listCameras(true).catch(()=>[]);
         if (Array.isArray(cams) && cams.length){
           const back = cams.find(c => /back|rear|environment/i.test(c.label)) || cams[0];
           await scanner.start(back.id);
-        } else {
-          await scanner.start();
-        }
-        setStatus('Caméra active. Présentez un QR (détection auto).','ok');
+        } else { await scanner.start(); }
+
+        setStatus('Caméra active. Présentez un QR.','ok');
       }catch(e){ setStatus('Erreur caméra : '+e.message, 'err'); }
     }
     async function stopCamera(){
       if (scanner){ await scanner.stop(); scanner.destroy(); scanner=null; setStatus('Caméra arrêtée.'); }
     }
 
+    /* ---------------------------------------------------------
+       📥 Import d'image ou collage de texte QR (debug)
+    --------------------------------------------------------- */
     async function importImage(file){
       try{
         const res = await QrScanner.scanImage(file, { returnDetailedScanResult:true });
@@ -157,66 +221,97 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
     async function pasteText(){
       try{
         const t = await navigator.clipboard.readText();
-        if(!t) { alert('Presse-papiers vide'); return; }
+        if(!t) return alert('Presse-papiers vide');
         handleQR(t);
       }catch{
-        const t = prompt('Collez ici le texte du QR :'); if(t) handleQR(t);
+        const t = prompt('Collez ici le texte du QR :');
+        if(t) handleQR(t);
       }
     }
 
+    /* ---------------------------------------------------------
+       🧾 Lecture & interprétation du QR (schéma JSON)
+       - Le QR doit contenir : { fields: [...], promptTemplate?: string }
+       - Fallbacks : "ANALYSE_PRODUIT" ou "ANALYSE_ZONE"
+    --------------------------------------------------------- */
     function handleQR(text){
-      setStatus('QR lu.');
       try { schema = JSON.parse(text); } catch{ schema = null; }
       if (!schema){
         if (/^ANALYSE_PRODUIT/i.test(text)) schema = EX_PRODUCT;
         if (/^ANALYSE_ZONE/i.test(text))    schema = EX_ZONE;
       }
-      if (!schema || !schema.fields || !(schema.promptTemplate || schema['#prompt'])){
-        setStatus('QR non conforme : JSON avec "fields" + "promptTemplate" attendu.', 'err'); return;
-      }
+      if (!schema || !schema.fields){ setStatus('QR non conforme.', 'err'); return; }
       renderForm(schema.fields);
-      els.output.value = (schema.promptTemplate || schema['#prompt']).trim();
       els.btnGenerate.disabled = false;
-      els.btnOpenChatGPT.disabled = false;
+      els.btnOpen.disabled = false;
       setStatus(`Schéma chargé : ${schema.title || schema.type || 'QR'}`,'ok');
     }
 
+    /* ---------------------------------------------------------
+       🧱 Rendu dynamique des champs
+       - Aucun champ "requis" imposé ici (souhait utilisateur)
+       - Types gérés : text/number/checkbox/select/textarea/gps
+         → gps est rendu comme text, rempli via bouton GPS
+       - Toute mention "kemler" est mappée vers "cd" (ADR)
+    --------------------------------------------------------- */
     function renderForm(fields){
       els.form.innerHTML = '';
       (fields||[]).forEach(f => {
-        const wrap = document.createElement('div'); wrap.className = 'space-y-1';
-        const lab = document.createElement('label'); lab.className = 'text-sm font-medium text-slate-700';
+        const wrap = document.createElement('div');
+        wrap.className = 'space-y-1';
+
+        const lab = document.createElement('label');
+        lab.className = 'text-sm font-medium text-slate-700';
         const label = (f.label || f.id).replace(/kemler/ig,'Code danger ADR');
-        lab.textContent = label; wrap.appendChild(lab);
+        lab.textContent = label;
+        wrap.appendChild(lab);
+
         let input;
-        if (f.type === 'textarea'){ input=document.createElement('textarea'); input.rows = 3; }
-        else if (f.type === 'select'){ input=document.createElement('select'); (f.options||[]).forEach(o=>{ const opt=document.createElement('option'); opt.value=o; opt.textContent=o; input.appendChild(opt); }); }
+        if (f.type === 'textarea'){ input=document.createElement('textarea'); input.rows=3; }
+        else if (f.type === 'select'){
+          input=document.createElement('select');
+          (f.options||[]).forEach(o=>{ const opt=document.createElement('option'); opt.value=o; opt.textContent=o; input.appendChild(opt); });
+        }
         else if (f.type === 'number'){ input=document.createElement('input'); input.type='number'; }
         else if (f.type === 'checkbox'){ input=document.createElement('input'); input.type='checkbox'; }
         else { input=document.createElement('input'); input.type='text'; }
+
         input.className = 'w-full p-2 rounded-lg border border-slate-200 bg-slate-50';
-        input.dataset.fieldId = f.id === 'kemler' ? 'cd' : f.id; // map kemler → cd
+        input.dataset.fieldId = f.id === 'kemler' ? 'cd' : f.id; // kemler → cd
         wrap.appendChild(input);
+
         els.form.appendChild(wrap);
       });
     }
 
+    /* ---------------------------------------------------------
+       🧩 Génération du prompt
+       - Templating {{var}} avec remplacement des champs saisis
+       - Concat automatique des valeurs non consommées + "extra" + GPS
+    --------------------------------------------------------- */
     function generatePrompt(){
       if (!schema) { alert('Aucun schéma chargé.'); return; }
+
+      // 1) Collecte des valeurs du formulaire
       const values = {};
       els.form.querySelectorAll('[data-field-id]').forEach(el => {
         const id = el.dataset.fieldId;
         const v  = (el.type==='checkbox') ? (el.checked ? 'oui':'non') : el.value.trim();
         values[id] = v;
       });
+
+      // 2) GPS via UI si non prévu dans le schéma
       const gpsUI = els.gpsField.value.trim();
       if (gpsUI) values.gps = values.gps || gpsUI;
 
-      let tpl = (schema.promptTemplate || schema['#prompt']).trim();
+      // 3) Application du template {{var}}
+      let tpl = (schema.promptTemplate || schema['#prompt'] || '').trim();
       tpl = tpl.replace(/{{(.*?)}}/g, (_,k)=> (values[k] ?? ''));
+
+      // 4) Concat "extras" (toutes paires non consommées) + notes libres
       const used = Array.from((schema.promptTemplate||'').matchAll(/{{(.*?)}}/g)).map(m=>m[1]);
       const extraLines = [];
-      Object.entries(values).forEach(([k,v])=>{ if (v && !used.includes(k)) extraLines.append? extraLines.append(`${k}: ${v}`): extraLines.push(`${k}: ${v}`) });
+      Object.entries(values).forEach(([k,v])=>{ if (v && !used.includes(k)) extraLines.push(`${k}: ${v}`) });
       if (els.extra.value.trim()) extraLines.push(`extra: ${els.extra.value.trim()}`);
       if (extraLines.length) tpl += "\n\n# Données complémentaires\n" + extraLines.join("\n");
 
@@ -225,21 +320,43 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
       setStatus('Prompt généré.','ok');
     }
 
-    async function copyPrompt(){
-      try { await navigator.clipboard.writeText(els.output.value); setStatus('Copié !','ok'); }
-      catch { setStatus('Impossible de copier automatiquement.','warn'); }
-    }
+    /* ---------------------------------------------------------
+       📤 Boutons d’action : copier / ouvrir ChatGPT
+       - "Ouvrir" copie d'abord, puis ouvre chat.openai.com/?q=...
+    --------------------------------------------------------- */
+    const promptEl = document.getElementById("output"); // alias simple
+    const resultEl = document.getElementById("output"); // pas de seconde zone
 
-    async function openChatGPTWithCopy(){
-      await copyPrompt();
-      window.open("https://chat.openai.com/", "_blank", "noopener");
-    }
+    document.getElementById("btnCopy").onclick = async () => {
+      const txt = (promptEl.value || resultEl.value || "").trim();
+      if (!txt) return alert("Prompt vide");
+      try {
+        await navigator.clipboard.writeText(txt);
+        alert("Prompt copié !");
+      } catch {
+        alert("Impossible de copier automatiquement. Copiez manuellement.");
+      }
+    };
 
-    els.btnStart.addEventListener('click', startCamera);
-    els.btnStop.addEventListener('click',  stopCamera);
-    els.fileInput.addEventListener('change', e => e.target.files[0] && importImage(e.target.files[0]));
-    els.btnPaste.addEventListener('click',  pasteText);
-    els.btnGPS.addEventListener('click',    ()=>{
+    document.getElementById("btnOpen").onclick = async () => {
+      const txt = (promptEl.value || resultEl.value || "").trim();
+      if (!txt) return alert("Prompt vide");
+      try { await navigator.clipboard.writeText(txt); } catch {}
+      const q = encodeURIComponent(txt);
+      window.open("https://chat.openai.com/?q=" + q, "_blank", "noopener");
+    };
+
+    /* ---------------------------------------------------------
+       🔌 Liaisons des autres boutons
+    --------------------------------------------------------- */
+    els.btnStart.onclick = startCamera;
+    els.btnStop.onclick  = stopCamera;
+    els.fileInput.onchange = e => e.target.files[0] && importImage(e.target.files[0]);
+    els.btnPaste.onclick  = pasteText;
+    els.btnGenerate.onclick = generatePrompt;
+
+    // GPS (HTML5 Geolocation API)
+    els.btnGPS.onclick = () => {
       if (!navigator.geolocation) { alert('Géolocalisation non supportée'); return; }
       setStatus('Acquisition GPS…');
       navigator.geolocation.getCurrentPosition(pos => {
@@ -248,13 +365,7 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
         setStatus('Position acquise.','ok');
       }, err => setStatus('GPS refusé : ' + err.message, 'err'),
       { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
-    });
-    els.btnGenerate.addEventListener('click', generatePrompt);
-    els.btnCopy.addEventListener('click',     copyPrompt);
-    els.btnOpenChatGPT.addEventListener('click', openChatGPTWithCopy);
-
-    els.exProduct.textContent = JSON.stringify(EX_PRODUCT, null, 2);
-    els.exZone.textContent    = JSON.stringify(EX_ZONE,    null, 2);
+    };
   </script>
 </body>
 </html>
