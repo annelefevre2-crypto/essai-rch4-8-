@@ -1,0 +1,23 @@
+{
+  "type": "zone_analysis",
+  "version": 1,
+  "title": "Analyse de zone d'intervention",
+  "fields": [
+    {
+      "id": "gps",
+      "label": "Position GPS",
+      "type": "gps"
+    },
+    {
+      "id": "wind_dir",
+      "label": "Direction du vent",
+      "type": "text"
+    },
+    {
+      "id": "wind_speed",
+      "label": "Vitesse du vent (m/s)",
+      "type": "number"
+    }
+  ],
+  "promptTemplate": "Analyse de zone : définir Z1/Z2/Z3 + consignes confinement/évacuation (AEGL) et moyens initiaux RCH3/RCH4.\nGPS: {{gps}}\nVent: {{wind_dir}} @ {{wind_speed}} m/s"
+}

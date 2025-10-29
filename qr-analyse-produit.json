@@ -1,0 +1,28 @@
+{
+  "type": "product_analysis",
+  "version": 1,
+  "title": "Analyse de produit RCH",
+  "fields": [
+    {
+      "id": "un",
+      "label": "CODE ONU",
+      "type": "text"
+    },
+    {
+      "id": "cd",
+      "label": "Code danger ADR",
+      "type": "text"
+    },
+    {
+      "id": "name",
+      "label": "Nom du produit",
+      "type": "text"
+    },
+    {
+      "id": "cas",
+      "label": "N° CAS",
+      "type": "text"
+    }
+  ],
+  "promptTemplate": "Analyse RCH : extrais produit, dangers, AEGL/IDLH, zones, moyens, décisions et propose un plan RCH3/RCH4.\nCODE ONU: {{un}}\nCode danger ADR: {{cd}}\nNom du produit: {{name}}\nN° CAS: {{cas}}"
+}

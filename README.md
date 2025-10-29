@@ -1,0 +1,1 @@
+Mise à jour : concat, pas de champs obligatoires, ADR, carré, copie+ouverture ChatGPT.
