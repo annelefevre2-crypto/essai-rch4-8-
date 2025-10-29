@@ -320,31 +320,37 @@ Vent: {{wind_dir}} @ {{wind_speed}} m/s`
       setStatus('Prompt généré.','ok');
     }
 
-    /* ---------------------------------------------------------
-       📤 Boutons d’action : copier / ouvrir ChatGPT
-       - "Ouvrir" copie d'abord, puis ouvre chat.openai.com/?q=...
-    --------------------------------------------------------- */
-    const promptEl = document.getElementById("output"); // alias simple
-    const resultEl = document.getElementById("output"); // pas de seconde zone
+  /* ---------------------------------------------------------
+   📤 Boutons d’action : copier / ouvrir ChatGPT
+   - On (re)génère toujours le prompt juste avant
+   - "Ouvrir" copie puis ouvre chat.openai.com/?q=...
+--------------------------------------------------------- */
+const promptEl = document.getElementById("output");
+const resultEl = document.getElementById("output");
 
-    document.getElementById("btnCopy").onclick = async () => {
-      const txt = (promptEl.value || resultEl.value || "").trim();
-      if (!txt) return alert("Prompt vide");
-      try {
-        await navigator.clipboard.writeText(txt);
-        alert("Prompt copié !");
-      } catch {
-        alert("Impossible de copier automatiquement. Copiez manuellement.");
-      }
-    };
+document.getElementById("btnCopy").onclick = async () => {
+  // Toujours regénérer le prompt pour être sûr d’avoir la version finale
+  try { generatePrompt(); } catch (err) { console.warn("Erreur generatePrompt", err); }
+  const txt = (promptEl.value || resultEl.value || "").trim();
+  if (!txt) return alert("Prompt vide");
+  try {
+    await navigator.clipboard.writeText(txt);
+    alert("Prompt copié !");
+  } catch {
+    alert("Impossible de copier automatiquement. Copiez manuellement.");
+  }
+};
 
-    document.getElementById("btnOpen").onclick = async () => {
-      const txt = (promptEl.value || resultEl.value || "").trim();
-      if (!txt) return alert("Prompt vide");
-      try { await navigator.clipboard.writeText(txt); } catch {}
-      const q = encodeURIComponent(txt);
-      window.open("https://chat.openai.com/?q=" + q, "_blank", "noopener");
-    };
+document.getElementById("btnOpen").onclick = async () => {
+  // Toujours regénérer le prompt avant ouverture
+  try { generatePrompt(); } catch (err) { console.warn("Erreur generatePrompt", err); }
+  const txt = (promptEl.value || resultEl.value || "").trim();
+  if (!txt) return alert("Prompt vide");
+  try { await navigator.clipboard.writeText(txt); } catch {}
+  const q = encodeURIComponent(txt);
+  window.open("https://chat.openai.com/?q=" + q, "_blank", "noopener");
+};
+
 
     /* ---------------------------------------------------------
        🔌 Liaisons des autres boutons
